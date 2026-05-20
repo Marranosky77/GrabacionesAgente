@@ -8,7 +8,6 @@ using System.Diagnostics;
 namespace GrabacionesAgente
 {
 
-
 	public class ObsManager
 	{
 		private readonly string _obsPath;
@@ -59,13 +58,6 @@ namespace GrabacionesAgente
 
 			throw new Exception("OBS no inició a tiempo");
 		}
-
-
-
-
-
-
-
 
 	}
 }
