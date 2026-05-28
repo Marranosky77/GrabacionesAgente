@@ -60,6 +60,20 @@ app.MapPost(
 	}
 );
 
+app.MapPost(
+	"/api/call/register",
+	async (
+		ActiveCallInfo callInfo,
+		Worker worker
+	) =>
+	{
+		await worker.RegisterCall(callInfo);
+
+		return Results.Ok();
+	}
+);
+
+
 app.Run();
 
 

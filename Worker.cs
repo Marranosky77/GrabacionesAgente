@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Text;
+using System.Net.Http.Json;
 
 public class Worker : BackgroundService
 {
@@ -12,6 +13,10 @@ public class Worker : BackgroundService
     private HubConnection _connection;
     private ClientWebSocket _obsSocket;
 	private readonly ObsManager _obsManager;
+
+	private readonly Dictionary<string, ActiveCallInfo>
+	_activeCalls = new();
+
 
 	private bool OBSConectado =>
 	_obsSocket != null &&
@@ -543,6 +548,24 @@ public class Worker : BackgroundService
 				$"🔥 Start recibido: {callId}"
 			);
 
+
+			// =========================
+			// GUARDAR LLAMADA ACTIVA
+			// =========================
+			_activeCalls[callId] = new ActiveCallInfo
+			{
+				CallId = callId,
+
+				AgentId = _agentId,
+
+				StartTime = DateTime.Now
+			};
+
+			Console.WriteLine(
+				$"✅ Llamada agregada: {callId}"
+			);
+
+
 			await IniciarGrabacion();
 
 			await _connection.InvokeAsync(
@@ -562,6 +585,113 @@ public class Worker : BackgroundService
 			);
 
 			await DetenerGrabacion();
+
+
+			Console.WriteLine(
+				$"⏹ Active Calls Count: {_activeCalls.Count}"
+			);
+
+			foreach (var item in _activeCalls)
+			{
+				Console.WriteLine(
+					$"CALL => {item.Key}"
+				);
+			}
+
+			// =========================
+			// GUARDAR EN API
+			// =========================
+			try
+			{
+				if (_activeCalls.TryGetValue(callId, out var callInfo))
+				{
+					var dto = new
+					{
+						RecordingID = callId,
+
+						OwnerID = callInfo.AgentId,
+
+						CallingPartyActorID = callInfo.AgentId,
+
+						CallingPartyActorEmail =
+							callInfo.AgentEmailId,
+							                                                                                                                                       
+						CallingPartyName =
+							callInfo.AgentName,                       
+
+						CallingPartyNumber =
+							callInfo.Ani,                        
+
+						CalledPartyNumber =
+							callInfo.Dnis,                                                                                                      
+
+						EquipoNombre =
+							callInfo.TeamName,
+
+						CreateTime =
+							callInfo.StartTime.ToString(
+								"yyyy-MM-dd HH:mm:ss"
+							),
+
+						FechaCreacion = DateTime.Now,
+
+						CallDurationSeconds =
+							(int)(
+								DateTime.Now -
+								callInfo.StartTime
+							).TotalSeconds,
+
+						AudioDuracionSegundos =
+							(int)(
+								DateTime.Now -
+								callInfo.StartTime
+							).TotalSeconds,
+
+						RecordingDetJSON =
+							callInfo.RawJson
+					};
+
+					using var http = new HttpClient();
+
+					var response =
+						await http.PostAsJsonAsync(
+							"http://localhost:5192/api/ReceivedVideoRecording/create",
+							dto
+						);
+
+					if (response.IsSuccessStatusCode)
+					{
+						Console.WriteLine(
+							$"✅ Registro guardado: {callId}"
+						);
+					}
+					else
+					{
+						//Console.WriteLine(
+						//	$"❌ Error API: {response.StatusCode}"
+						//);
+						var errorContent = await response.Content.ReadAsStringAsync();
+
+						Console.WriteLine(
+							$"❌ Error API: {response.StatusCode}"
+						);
+
+						Console.WriteLine(
+							$"❌ API RESPONSE: {errorContent}"
+						);
+					}
+
+					// limpiar memoria
+					_activeCalls.Remove(callId);
+				}
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine(
+					$"❌ Error guardando llamada: {ex.Message}"
+				);
+			}
+
 
 			await _connection.InvokeAsync(
 				"NotifyRecordingStopped",
@@ -621,6 +751,38 @@ public class Worker : BackgroundService
 		await ConnectSignalR();
 	}
 
+
+	// =========================
+	// REGISTER CALL
+	// =========================
+	public async Task RegisterCall(
+		ActiveCallInfo callInfo
+	)
+	{
+		try
+		{
+			if (
+				callInfo == null ||
+				string.IsNullOrWhiteSpace(callInfo.CallId)
+			)
+			{
+				return;
+			}
+
+			_activeCalls[callInfo.CallId] =
+				callInfo;
+
+			Console.WriteLine(
+				$"💾 CALL REGISTERED: {callInfo.CallId}"
+			);
+		}
+		catch (Exception ex)
+		{
+			Console.WriteLine(
+				$"❌ RegisterCall Error: {ex.Message}"
+			);
+		}
+	}
 
 	private async Task EsperarOBSWebSocket()
 	{
