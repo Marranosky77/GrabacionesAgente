@@ -758,18 +758,18 @@ public class Worker : BackgroundService
 			// GUARDAR LLAMADA ACTIVA
 			// =========================
 			if (_activeCalls.TryGetValue(callId, out var existingCall))
-			{
-				existingCall.StartTime = DateTime.Now;
-			}
-			else
-			{
-				_activeCalls[callId] = new ActiveCallInfo
 				{
-					CallId = callId,
-					AgentId = _agentId,
-					StartTime = DateTime.Now
-				};
-			}
+					existingCall.StartTime = DateTime.Now;
+				}
+				else
+				{
+					_activeCalls[callId] = new ActiveCallInfo
+					{
+						CallId = callId,
+						AgentId = _agentId,
+						StartTime = DateTime.Now
+					};
+				}
 
 			_currentRecordingCallId = callId;
 
@@ -853,7 +853,8 @@ public class Worker : BackgroundService
 			// =========================
 			try
 			{
-				if (_activeCalls.TryGetValue(callId, out var callInfo))
+				var realCallId = _activeCalls.Keys.LastOrDefault();
+				if (_activeCalls.TryGetValue(realCallId, out var callInfo))
 				{
 					var dto = new
 					{
