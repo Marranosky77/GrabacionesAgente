@@ -17,6 +17,15 @@ public class Worker : BackgroundService
 	private readonly Dictionary<string, ActiveCallInfo>
 	_activeCalls = new();
 
+	private readonly Dictionary<string, string>
+	_recordingPaths = new();
+
+	private readonly Dictionary<string, string>
+	_uploadedUrls = new();
+
+	private string? _currentRecordingCallId;
+
+	private string _currentUrl;
 
 	private bool OBSConectado =>
 	_obsSocket != null &&
@@ -152,7 +161,8 @@ public class Worker : BackgroundService
     // ⏹ DETENER GRABACIÓN
     private async Task DetenerGrabacion()
     {
-        var request = new
+		
+		var request = new
         {
             op = 6,
             d = new
@@ -173,9 +183,136 @@ public class Worker : BackgroundService
         );
 
         Console.WriteLine("⏹ Grabación detenida");
-    }
 
-    private string GenerarAuth(string password, string salt, string challenge)
+		
+	}
+
+	// =====================================
+	// SUBIR MP4 AL API
+	// =====================================
+	private async Task<string?> UploadRecordingFile(
+		string callId
+	)
+	{
+		try
+		{
+			if (!_recordingPaths.ContainsKey(callId))
+			{
+				Console.WriteLine(
+					$"❌ No existe path para {callId}"
+				);
+
+				return null;
+			}
+
+			var filePath =
+				_recordingPaths[callId];
+
+			if (!File.Exists(filePath))
+			{
+				Console.WriteLine(
+					$"❌ Archivo no existe: {filePath}"
+				);
+
+				return null;
+			}
+
+			using var http = new HttpClient();
+
+			using var form =
+				new MultipartFormDataContent();
+
+			// =====================================
+			// ESPERAR QUE OBS LIBERE ARCHIVO
+			// =====================================
+			for (int i = 0; i < 10; i++)
+			{
+				try
+				{
+					using var test =
+						File.Open(
+							filePath,
+							FileMode.Open,
+							FileAccess.Read,
+							FileShare.None
+						);
+
+					break;
+				}
+				catch
+				{
+					Console.WriteLine(
+						$"⏳ Archivo bloqueado... intento {i + 1}"
+					);
+
+					await Task.Delay(1000);
+				}
+			}
+
+
+
+
+
+			using var stream =
+				File.OpenRead(filePath);
+
+			var fileContent =
+				new StreamContent(stream);
+
+			fileContent.Headers.ContentType =
+				new System.Net.Http.Headers.MediaTypeHeaderValue(
+					"video/mp4"
+				);
+
+			form.Add(
+				fileContent,
+				"file",
+				Path.GetFileName(filePath)
+			);
+
+			form.Add(
+				new StringContent(callId),
+				"recordingId"
+			);
+
+			Console.WriteLine(
+				$"⬆ Subiendo archivo: {filePath}"
+			);
+
+			var response =
+				await http.PostAsync(
+					"http://localhost:5192/api/ReceivedVideoRecording/upload",
+					form
+				);
+
+			var responseContent =
+				await response.Content.ReadAsStringAsync();
+
+			Console.WriteLine(
+				$"📦 Upload response: {responseContent}"
+			);
+
+			if (!response.IsSuccessStatusCode)
+			{
+				Console.WriteLine(
+					$"❌ Error upload: {response.StatusCode}"
+				);
+
+				return null;
+			}
+
+			return responseContent;
+		}
+		catch (Exception ex)
+		{
+			Console.WriteLine(
+				$"❌ Upload error: {ex.Message}"
+			);
+
+			return null;
+		}
+	}
+	private string GenerarAuth(string password, string salt, string challenge)
     {
         using var sha256 = SHA256.Create();
 
@@ -225,6 +362,74 @@ public class Worker : BackgroundService
 				var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
 
                 Console.WriteLine($"OBS dice: {json}");
+
+
+				// =====================================
+				// RECORD STOPPED
+				// =====================================
+				if (
+					json.Contains("StopRecord") &&
+					json.Contains("outputPath")
+				)
+				{
+					try
+					{
+						dynamic data =
+							JsonConvert.DeserializeObject(json);
+
+						string outputPath =
+							data.d.responseData.outputPath;
+
+						var lastCallId = _currentRecordingCallId;
+
+						if (!string.IsNullOrWhiteSpace(lastCallId))
+						{
+							_recordingPaths[lastCallId] =
+								outputPath;
+
+							Console.WriteLine(
+								$"🎥 PATH GUARDADO => {lastCallId}"
+							);
+
+							Console.WriteLine(
+								$"📁 {outputPath}"
+							);
+
+							// SUBIR AQUÍ
+							var uploadedUrl =
+								await UploadRecordingFile(lastCallId);
+
+							if (!string.IsNullOrWhiteSpace(uploadedUrl))
+							{
+								dynamic? uploadResult =
+									JsonConvert.DeserializeObject(uploadedUrl);
+
+								if (result != null)
+								{
+									_uploadedUrls[lastCallId] =
+										uploadResult.message.ToString();
+								}
+
+								_currentUrl = uploadResult.message.ToString();
+								Console.WriteLine(
+
+								$"🌍 URL MESSAGE: {_currentUrl}"
+							);
+							}
+
+							Console.WriteLine(
+								$"🌍 URL SUBIDA: {uploadedUrl}"
+							);
+						}
+					}
+					catch (Exception ex)
+					{
+						Console.WriteLine(
+							$"❌ Error leyendo outputPath: {ex.Message}"
+						);
+					}
+				}
+
 
 				//var msg = JsonConvert.DeserializeObject<dynamic>(json);
 
@@ -552,14 +757,21 @@ public class Worker : BackgroundService
 			// =========================
 			// GUARDAR LLAMADA ACTIVA
 			// =========================
-			_activeCalls[callId] = new ActiveCallInfo
+			if (_activeCalls.TryGetValue(callId, out var existingCall))
 			{
-				CallId = callId,
+				existingCall.StartTime = DateTime.Now;
+			}
+			else
+			{
+				_activeCalls[callId] = new ActiveCallInfo
+				{
+					CallId = callId,
+					AgentId = _agentId,
+					StartTime = DateTime.Now
+				};
+			}
 
-				AgentId = _agentId,
-
-				StartTime = DateTime.Now
-			};
+			_currentRecordingCallId = callId;
 
 			Console.WriteLine(
 				$"✅ Llamada agregada: {callId}"
@@ -586,6 +798,44 @@ public class Worker : BackgroundService
 
 			await DetenerGrabacion();
 
+			// esperar que OBS termine archivo
+			await Task.Delay(3000);
+
+
+			//string? outputPath = null;
+
+			//for (int i = 0; i < 10; i++)
+			//{
+			//	if (_recordingPaths.TryGetValue(callId, out outputPath))
+			//	{
+			//		break;
+			//	}
+
+			//	Console.WriteLine(
+			//		$"⏳ Esperando outputPath de OBS... intento {i + 1}"
+			//	);
+
+			//	await Task.Delay(1000);
+			//}
+
+			//if (string.IsNullOrWhiteSpace(outputPath))
+			//{
+			//	Console.WriteLine(
+			//		$"❌ OBS nunca devolvió outputPath para {callId}"
+			//	);
+			//}
+			//else
+			//{
+			//	var uploadedUrl =
+			//		await UploadRecordingFile(callId);
+
+			//	Console.WriteLine(
+			//		$"🌍 URL SUBIDA: {uploadedUrl}"
+			//	);
+			//}
+
+
+
 
 			Console.WriteLine(
 				$"⏹ Active Calls Count: {_activeCalls.Count}"
@@ -608,6 +858,8 @@ public class Worker : BackgroundService
 					var dto = new
 					{
 						RecordingID = callId,
+
+						DownloadURL =  _currentUrl,
 
 						OwnerID = callInfo.AgentId,
 
@@ -683,6 +935,13 @@ public class Worker : BackgroundService
 
 					// limpiar memoria
 					_activeCalls.Remove(callId);
+				}
+				else
+				{
+					Console.WriteLine(
+						$"❌ API RESPONSE: {_activeCalls}"
+					);
+					
 				}
 			}
 			catch (Exception ex)
