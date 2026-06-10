@@ -27,6 +27,8 @@ public class Worker : BackgroundService
 
 	private string _currentUrl;
 
+	private readonly string _baseUrl;
+
 	private bool OBSConectado =>
 	_obsSocket != null &&
 	_obsSocket.State == WebSocketState.Open;
@@ -35,11 +37,11 @@ public class Worker : BackgroundService
 
 	private string _agentId = "A001"; 
 
-	public Worker(ILogger<Worker> logger, ObsManager obsManager)
+	public Worker(ILogger<Worker> logger, ObsManager obsManager, IConfiguration configuration)
     {
         _logger = logger;
 		_obsManager = obsManager;
-
+		_baseUrl = configuration["ApiSettings:BaseUrl"];
 	}
 
 	// =====================================================
@@ -281,7 +283,8 @@ public class Worker : BackgroundService
 
 			var response =
 				await http.PostAsync(
-					"http://localhost:5192/api/ReceivedVideoRecording/upload",
+					//"http://localhost:5192/api/ReceivedVideoRecording/upload",
+					$"{_baseUrl}/api/ReceivedVideoRecording/upload",
 					form
 				);
 
@@ -739,7 +742,8 @@ public class Worker : BackgroundService
 	{
 		_connection = new HubConnectionBuilder()
 			.WithUrl(
-				$"http://localhost:5192/grabacionesHub?agentId={_agentId}"
+				//$"http://localhost:5192/grabacionesHub?agentId={_agentId}"
+				$"{_baseUrl}/grabacionesHub?agentId={_agentId}"
 			)
 			.WithAutomaticReconnect()
 			.Build();
@@ -908,7 +912,8 @@ public class Worker : BackgroundService
 
 					var response =
 						await http.PostAsJsonAsync(
-							"http://localhost:5192/api/ReceivedVideoRecording/create",
+							//"http://localhost:5192/api/ReceivedVideoRecording/create",
+							$"{_baseUrl}/api/ReceivedVideoRecording/create",
 							dto
 						);
 
