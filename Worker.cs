@@ -367,77 +367,154 @@ public class Worker : BackgroundService
                 Console.WriteLine($"OBS dice: {json}");
 
 
-				// =====================================
-				// RECORD STOPPED
-				// =====================================
-				if (
-					json.Contains("StopRecord") &&
-					json.Contains("outputPath")
-				)
-				{
-					try
-					{
-						dynamic data =
-							JsonConvert.DeserializeObject(json);
+                // =====================================
+                // RECORD STOPPED
+                // =====================================
+                //if (
+                //	  json.Contains("StopRecord") &&
+                //	  json.Contains("outputPath")				)
+                //{
+                //	try
+                //	{
+                //		dynamic data =
+                //			JsonConvert.DeserializeObject(json);
 
-						string outputPath =
-							data.d.responseData.outputPath;
+                //		string outputPath =
+                //			data.d.responseData.outputPath;
 
-						var lastCallId = _currentRecordingCallId;
-
-						if (!string.IsNullOrWhiteSpace(lastCallId))
-						{
-							_recordingPaths[lastCallId] =
-								outputPath;
-
-							Console.WriteLine(
-								$"🎥 PATH GUARDADO => {lastCallId}"
-							);
-
-							Console.WriteLine(
-								$"📁 {outputPath}"
-							);
-
-							// SUBIR AQUÍ
-							var uploadedUrl =
-								await UploadRecordingFile(lastCallId);
-
-							if (!string.IsNullOrWhiteSpace(uploadedUrl))
-							{
-								dynamic? uploadResult =
-									JsonConvert.DeserializeObject(uploadedUrl);
-
-								if (result != null)
-								{
-									_uploadedUrls[lastCallId] =
-										uploadResult.message.ToString();
-								}
-
-								_currentUrl = uploadResult.message.ToString();
-								Console.WriteLine(
-
-								$"🌍 URL MESSAGE: {_currentUrl}"
-							);
-							}
-
-							Console.WriteLine(
-								$"🌍 URL SUBIDA: {uploadedUrl}"
-							);
-						}
-					}
-					catch (Exception ex)
-					{
-						Console.WriteLine(
-							$"❌ Error leyendo outputPath: {ex.Message}"
-						);
-					}
-				}
+                //		var lastCallId = _currentRecordingCallId;
 
 
-				//var msg = JsonConvert.DeserializeObject<dynamic>(json);
+                //                    if (!string.IsNullOrWhiteSpace(lastCallId))
+                //		{
+                //			_recordingPaths[lastCallId] =
+                //				outputPath;
 
-				//int op = msg.op;
-				dynamic? msg = JsonConvert.DeserializeObject<dynamic>(json);
+                //			Console.WriteLine(
+                //				$"🎥 PATH GUARDADO => {lastCallId}"
+                //			);
+
+                //			Console.WriteLine(
+                //				$"📁 {outputPath}"
+                //			);
+
+
+                //			var uploadedUrl =
+                //				await UploadRecordingFile(lastCallId);
+
+                //			if (!string.IsNullOrWhiteSpace(uploadedUrl))
+                //			{
+                //				dynamic? uploadResult =
+                //					JsonConvert.DeserializeObject(uploadedUrl);
+
+                //				if (result != null)
+                //				{
+                //					_uploadedUrls[lastCallId] =
+                //						uploadResult.message.ToString();
+                //				}
+
+                //				_currentUrl = uploadResult.message.ToString();
+                //				Console.WriteLine(
+
+                //				$"🌍 URL MESSAGE: {_currentUrl}"
+                //			);
+                //			}
+
+                //			Console.WriteLine(
+                //				$"🌍 URL SUBIDA: {uploadedUrl}"
+                //			);
+                //		}
+                //	}
+                //	catch (Exception ex)
+                //	{
+                //		Console.WriteLine(
+                //			$"❌ Error leyendo outputPath: {ex.Message}"
+                //		);
+                //	}
+                //}
+
+
+
+                dynamic? data = JsonConvert.DeserializeObject(json);
+
+                if (
+                    data?.d?.eventType?.ToString() == "RecordStateChanged" &&
+                    data?.d?.eventData != null &&
+                    data.d.eventData.outputActive == false
+                )
+                {
+                    try
+                    {
+                        string outputPath =
+                            data.d.eventData.outputPath.ToString();
+
+                        var lastCallId = _currentRecordingCallId;
+
+                        if (!string.IsNullOrWhiteSpace(lastCallId))
+                        {
+                            _recordingPaths[lastCallId] = outputPath;
+
+                            Console.WriteLine(
+                                $"🎥 PATH GUARDADO => {lastCallId}"
+                            );
+
+                            Console.WriteLine(
+                                $"📁 {outputPath}"
+                            );
+
+                            // =========================
+                            // SUBIR VIDEO
+                            // =========================
+                            var uploadedUrl =
+                                await UploadRecordingFile(lastCallId);
+
+                            if (!string.IsNullOrWhiteSpace(uploadedUrl))
+                            {
+                                dynamic? uploadResult =
+                                    JsonConvert.DeserializeObject(uploadedUrl);
+
+                                if (uploadResult != null)
+                                {
+                                    _uploadedUrls[lastCallId] =
+                                        uploadResult.message.ToString();
+
+                                    _currentUrl =
+                                        uploadResult.message.ToString();
+
+                                    Console.WriteLine(
+                                        $"🌍 URL MESSAGE: {_currentUrl}"
+                                    );
+                                }
+                            }
+
+                            Console.WriteLine(
+                                $"🌍 URL SUBIDA: {uploadedUrl}"
+                            );
+                        }
+                        else
+                        {
+                            Console.WriteLine(
+                                "❌ No existe _currentRecordingCallId"
+                            );
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine(
+                            $"❌ Error leyendo outputPath: {ex.Message}"
+                        );
+                    }
+                }
+
+
+
+
+
+
+
+
+
+                dynamic? msg = JsonConvert.DeserializeObject<dynamic>(json);
 
 				if (msg == null)
 				{
@@ -862,11 +939,13 @@ public class Worker : BackgroundService
 				{
 					var dto = new
 					{
-						RecordingID = callId,
+						RecordingID = realCallId,
 
-						DownloadURL =  _currentUrl,
+						//DownloadURL =  _currentUrl,
 
-						OwnerID = callInfo.AgentId,
+                        DownloadURL = "/grabaciones/" + realCallId + ".mp4",
+
+                        OwnerID = callInfo.AgentId,
 
 						CallingPartyActorID = callInfo.AgentId,
 
