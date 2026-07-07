@@ -29,7 +29,8 @@ public class Worker : BackgroundService
 
 	private readonly string _baseUrl;
 
-	private bool OBSConectado =>
+    private readonly MonitorManager _monitorManager = new();
+    private bool OBSConectado =>
 	_obsSocket != null &&
 	_obsSocket.State == WebSocketState.Open;
 
@@ -537,6 +538,32 @@ public class Worker : BackgroundService
 
                     await IdentificarOBS(challenge, salt);
                 }
+
+                if (op == 2)
+                {
+                    Console.WriteLine("✅ OBS autenticado");
+
+                    await ObtenerInputsOBS();
+
+                    await Task.Delay(1000);
+
+                    await ObtenerConfiguracionInput(" pantalla");
+
+                    await Task.Delay(500);
+
+                    await ObtenerMonitoresOBS();
+
+                    await Task.Delay(500);
+
+                    await ObtenerEscenasOBS();
+
+                    await Task.Delay(500);
+
+                    await ObtenerItemsEscena("Escena");
+                }
+
+
+
             }
         }
         catch (Exception ex)
@@ -584,10 +611,31 @@ public class Worker : BackgroundService
 	CancellationToken stoppingToken)
 	{
 		Console.WriteLine("Iniciando Worker...");
+       
+        await ConnectSignalR();
 
-		await ConnectSignalR();
 
-		while (!stoppingToken.IsCancellationRequested)
+        var monitors = _monitorManager.GetMonitors();
+
+        Console.WriteLine("--------------------------------");
+
+        Console.WriteLine($"Monitores detectados: {monitors.Count}");
+
+        foreach (var m in monitors)
+        {
+            Console.WriteLine(
+                $"{m.DeviceName} " +
+                $"{m.Width}x{m.Height} " +
+                $"Principal:{m.Primary} " +
+                $"Pos({m.X},{m.Y})");
+        }
+
+        Console.WriteLine("--------------------------------");
+
+
+
+
+        while (!stoppingToken.IsCancellationRequested)
 		{
 			try
 			{
@@ -1158,4 +1206,172 @@ public class Worker : BackgroundService
 	}
 
 
+
+    // =====================================
+    // OBTENER INPUTS (FUENTES) DE OBS
+    // =====================================
+    private async Task ObtenerInputsOBS()
+    {
+        if (!OBSConectado)
+        {
+            Console.WriteLine("⚠ OBS no conectado");
+            return;
+        }
+
+        var request = new
+        {
+            op = 6,
+            d = new
+            {
+                requestType = "GetInputList",
+                requestId = Guid.NewGuid().ToString()
+            }
+        };
+
+        var json = JsonConvert.SerializeObject(request);
+        var bytes = Encoding.UTF8.GetBytes(json);
+
+        await _obsSocket.SendAsync(
+            new ArraySegment<byte>(bytes),
+            WebSocketMessageType.Text,
+            true,
+            CancellationToken.None);
+
+        Console.WriteLine("📺 Solicitando Inputs de OBS...");
+    }
+
+    // =====================================
+    // OBTENER CONFIGURACIÓN DE UN INPUT
+    // =====================================
+    private async Task ObtenerConfiguracionInput(string inputName)
+    {
+        if (!OBSConectado)
+        {
+            Console.WriteLine("⚠ OBS no conectado");
+            return;
+        }
+
+        var request = new
+        {
+            op = 6,
+            d = new
+            {
+                requestType = "GetInputSettings",
+                requestId = Guid.NewGuid().ToString(),
+                requestData = new
+                {
+                    inputName = inputName
+                }
+            }
+        };
+
+        var json = JsonConvert.SerializeObject(request);
+        var bytes = Encoding.UTF8.GetBytes(json);
+
+        await _obsSocket.SendAsync(
+            new ArraySegment<byte>(bytes),
+            WebSocketMessageType.Text,
+            true,
+            CancellationToken.None);
+
+        Console.WriteLine($"📺 Solicitando configuración del Input: {inputName}");
+    }
+
+    private async Task ObtenerMonitoresOBS()
+    {
+        if (!OBSConectado)
+        {
+            Console.WriteLine("⚠ OBS no conectado");
+            return;
+        }
+
+        var request = new
+        {
+            op = 6,
+            d = new
+            {
+                requestType = "GetMonitorList",
+                requestId = Guid.NewGuid().ToString()
+            }
+        };
+
+        var json = JsonConvert.SerializeObject(request);
+        var bytes = Encoding.UTF8.GetBytes(json);
+
+        await _obsSocket.SendAsync(
+            new ArraySegment<byte>(bytes),
+            WebSocketMessageType.Text,
+            true,
+            CancellationToken.None);
+
+        Console.WriteLine("📺 Solicitando lista de monitores de OBS...");
+    }
+
+
+    // =====================================
+    // OBTENER ESCENAS DE OBS
+    // =====================================
+    private async Task ObtenerEscenasOBS()
+    {
+        if (!OBSConectado)
+        {
+            Console.WriteLine("⚠ OBS no conectado");
+            return;
+        }
+
+        var request = new
+        {
+            op = 6,
+            d = new
+            {
+                requestType = "GetSceneList",
+                requestId = Guid.NewGuid().ToString()
+            }
+        };
+
+        var json = JsonConvert.SerializeObject(request);
+        var bytes = Encoding.UTF8.GetBytes(json);
+
+        await _obsSocket.SendAsync(
+            new ArraySegment<byte>(bytes),
+            WebSocketMessageType.Text,
+            true,
+            CancellationToken.None);
+
+        Console.WriteLine("🎬 Solicitando lista de escenas...");
+    }
+
+    private async Task ObtenerItemsEscena(string sceneName)
+    {
+        if (!OBSConectado)
+        {
+            Console.WriteLine("⚠ OBS no conectado");
+            return;
+        }
+
+        var request = new
+        {
+            op = 6,
+            d = new
+            {
+                requestType = "GetSceneItemList",
+                requestId = Guid.NewGuid().ToString(),
+                requestData = new
+                {
+                    sceneName = sceneName
+                }
+            }
+        };
+
+        var json = JsonConvert.SerializeObject(request);
+        var bytes = Encoding.UTF8.GetBytes(json);
+
+        await _obsSocket.SendAsync(
+            new ArraySegment<byte>(bytes),
+            WebSocketMessageType.Text,
+            true,
+            CancellationToken.None);
+
+        Console.WriteLine($"🎬 Solicitando Items de la escena: {sceneName}");
+    }
 }
